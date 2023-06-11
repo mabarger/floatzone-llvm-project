@@ -155,7 +155,7 @@ class SafeStack {
   /// Load stack guard from the frame and check if it has changed.
   void checkStackGuard(IRBuilder<> &IRB, Function &F, Instruction &RI,
                        AllocaInst *StackGuardSlot, Value *StackGuard);
-
+public:
   /// Find all static allocas, dynamic allocas, return instructions and
   /// stack restore points (exception unwind blocks and setjmp calls) in the
   /// given function and append them to the respective vectors.
@@ -164,7 +164,7 @@ class SafeStack {
                  SmallVectorImpl<Argument *> &ByValArguments,
                  SmallVectorImpl<Instruction *> &Returns,
                  SmallVectorImpl<Instruction *> &StackRestorePoints);
-
+private:
   /// Calculate the allocation size of a given alloca. Returns 0 if the
   /// size can not be statically determined.
   uint64_t getStaticAllocaAllocationSize(const AllocaInst* AI);
@@ -930,6 +930,29 @@ public:
 };
 
 } // end anonymous namespace
+
+llvm::DenseSet<AllocaInst *> getUnsafeAlloca(Function &F, ScalarEvolution &SE) {
+  llvm::DenseSet<AllocaInst *> result;
+
+  TargetLoweringBase *target = nullptr;
+  SafeStack stack(F, *target, F.getParent()->getDataLayout(), nullptr, SE);
+
+  SmallVector<AllocaInst *, 16> StaticAllocas;
+  SmallVector<AllocaInst *, 4> DynamicAllocas;
+  SmallVector<Argument *, 4> ByValArguments;
+  SmallVector<Instruction *, 4> Returns;
+  SmallVector<Instruction *, 4> StackRestorePoints;
+  stack.findInsts(F, StaticAllocas, DynamicAllocas, ByValArguments, Returns,
+            StackRestorePoints);
+
+  for (AllocaInst *I : StaticAllocas)
+    result.insert(I);
+  for (AllocaInst *I : DynamicAllocas)
+    result.insert(I);
+
+  return result;
+}
+
 
 char SafeStackLegacyPass::ID = 0;
 

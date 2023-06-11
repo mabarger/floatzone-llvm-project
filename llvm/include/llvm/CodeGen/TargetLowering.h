@@ -3429,6 +3429,7 @@ public:
 
   /// Determines the optimal series of memory ops to replace the memset / memcpy.
   /// Return true if the number of memory ops is below the threshold (Limit).
+  /// Note that this is always the case when Limit is ~0.
   /// It returns the types of the sequence of memory ops to perform
   /// memset / memcpy by reference.
   bool findOptimalMemOpLowering(std::vector<EVT> &MemOps, unsigned Limit,
@@ -4278,6 +4279,7 @@ public:
     C_Register,            // Constraint represents specific register(s).
     C_RegisterClass,       // Constraint represents any of register(s) in class.
     C_Memory,              // Memory constraint.
+    C_Address,             // Address constraint.
     C_Immediate,           // Requires an immediate.
     C_Other,               // Something else.
     C_Unknown              // Unsupported constraint.
@@ -4382,6 +4384,8 @@ public:
       return InlineAsm::Constraint_o;
     if (ConstraintCode == "X")
       return InlineAsm::Constraint_X;
+    if (ConstraintCode == "p")
+      return InlineAsm::Constraint_p;
     return InlineAsm::Constraint_Unknown;
   }
 

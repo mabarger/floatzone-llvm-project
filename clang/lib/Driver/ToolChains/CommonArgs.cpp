@@ -1513,6 +1513,33 @@ static void AddLibgcc(const ToolChain &TC, const Driver &D,
 
 void tools::AddRunTimeLibs(const ToolChain &TC, const Driver &D,
                            ArgStringList &CmdArgs, const ArgList &Args) {
+#ifndef DEFAULTCLANG
+  if (llvm::StringRef(getenv("FLOATZONE_MODE")).contains("oatzone")) {
+    const char *rpath = std::getenv("WRAP_DIR");
+    if (!rpath) {
+      llvm::errs() << "Need to set WRAP_DIR env var to wrap.so directory";
+      abort();
+    }
+    CmdArgs.push_back("-L");
+    CmdArgs.push_back(rpath);
+    CmdArgs.push_back("-rpath");
+    CmdArgs.push_back(rpath);
+    CmdArgs.push_back("-lwrap");
+  }
+  else if (llvm::StringRef(getenv("FLOATZONE_MODE")).contains("cmp")) {
+    const char *rpath = std::getenv("WRAP_DIR");
+    if (!rpath) {
+      llvm::errs() << "Need to set WRAP_DIR env var to cmp.so directory";
+      abort();
+    }
+    CmdArgs.push_back("-L");
+    CmdArgs.push_back(rpath);
+    CmdArgs.push_back("-rpath");
+    CmdArgs.push_back(rpath);
+    CmdArgs.push_back("-lcmp");
+  }
+#endif
+
   // Make use of compiler-rt if --rtlib option is used
   ToolChain::RuntimeLibType RLT = TC.GetRuntimeLibType(Args);
 

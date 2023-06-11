@@ -29,6 +29,11 @@ add_llvm_component_library(LLVMTransformUtils
   GlobalStatus.cpp
   GuardUtils.cpp
   HelloWorld.cpp
+  CmpZone.cpp
+  Slice.cpp
+  LoopInstCategory.cpp
+  FloatZone.cpp
+  CheckFloat.cpp
   InlineFunction.cpp
   InjectTLIMappings.cpp
   InstructionNamer.cpp

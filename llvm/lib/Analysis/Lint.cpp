@@ -338,6 +338,12 @@ void Lint::visitCallBase(CallBase &I) {
                            MSI->getDestAlign(), nullptr, MemRef::Write);
       break;
     }
+    case Intrinsic::memset_inline: {
+      MemSetInlineInst *MSII = cast<MemSetInlineInst>(&I);
+      visitMemoryReference(I, MemoryLocation::getForDest(MSII),
+                           MSII->getDestAlign(), nullptr, MemRef::Write);
+      break;
+    }
 
     case Intrinsic::vastart:
       Assert(I.getParent()->getParent()->isVarArg(),

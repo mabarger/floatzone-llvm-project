@@ -6,6 +6,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/Transforms/Utils/HelloWorld.h"
+#include "llvm/Transforms/Utils/FloatZone.h"
+#include "llvm/Transforms/Utils/CheckFloat.h"
+#include "llvm/Transforms/Utils/CmpZone.h"
 #include "clang/CodeGen/BackendUtil.h"
 #include "clang/Basic/CodeGenOptions.h"
 #include "clang/Basic/Diagnostic.h"
@@ -1348,6 +1352,29 @@ void EmitAssemblyHelper::RunOptimizationPipeline(
 
   ModulePassManager MPM;
 
+#ifndef DEFAULTCLANG
+  // If LTO is enabled then LLD will run the pass for
+  // us, so no need to add it here.
+  if (!CodeGenOpts.PrepareForLTO) {
+    PB.registerOptimizerLastEPCallback(
+            [](ModulePassManager &MPM, OptimizationLevel Level) {
+              MPM.addPass(createModuleToFunctionPassAdaptor(HelloWorldPass()));
+            });
+    PB.registerOptimizerLastEPCallback(
+            [](ModulePassManager &MPM, OptimizationLevel Level) {
+              MPM.addPass(FloatZonePass());
+            });
+    PB.registerOptimizerLastEPCallback(
+            [](ModulePassManager &MPM, OptimizationLevel Level) {
+              MPM.addPass(CheckFloatPass());
+            });            
+    PB.registerOptimizerLastEPCallback(
+            [](ModulePassManager &MPM, OptimizationLevel Level) {
+              MPM.addPass(CmpZonePass());
+            });
+  }
+#endif
+
   if (!CodeGenOpts.DisableLLVMPasses) {
     // Map our optimization levels into one of the distinct levels used to
     // configure the pipeline.
@@ -1404,7 +1431,6 @@ void EmitAssemblyHelper::RunOptimizationPipeline(
                 EntryExitInstrumenterPass(/*PostInlining=*/true)));
           });
     }
-
     // Register callbacks to schedule sanitizer passes at the appropriate part
     // of the pipeline.
     if (LangOpts.Sanitize.has(SanitizerKind::LocalBounds))
@@ -1445,6 +1471,7 @@ void EmitAssemblyHelper::RunOptimizationPipeline(
       MPM.addPass(ModuleMemProfilerPass());
     }
   }
+
 
   // Add a verifier pass if requested. We don't have to do this if the action
   // requires code generation because there will already be a verifier pass in

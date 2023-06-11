@@ -53,6 +53,9 @@ using namespace CodeGen;
 /// markers.
 static bool shouldEmitLifetimeMarkers(const CodeGenOptions &CGOpts,
                                       const LangOptions &LangOpts) {
+  //Always emit lifte time markers, even in O0
+  return true;
+
   if (CGOpts.DisableLifetimeMarkers)
     return false;
 

@@ -1,4 +1,5 @@
 //===- Construction of pass pipelines -------------------------------------===//
+
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -117,6 +118,10 @@
 #include "llvm/Transforms/Utils/AddDiscriminators.h"
 #include "llvm/Transforms/Utils/AssumeBundleBuilder.h"
 #include "llvm/Transforms/Utils/CanonicalizeAliases.h"
+#include "llvm/Transforms/Utils/HelloWorld.h"
+#include "llvm/Transforms/Utils/FloatZone.h"
+#include "llvm/Transforms/Utils/CheckFloat.h"
+#include "llvm/Transforms/Utils/CmpZone.h"
 #include "llvm/Transforms/Utils/InjectTLIMappings.h"
 #include "llvm/Transforms/Utils/LibCallsShrinkWrap.h"
 #include "llvm/Transforms/Utils/Mem2Reg.h"
@@ -1469,6 +1474,10 @@ PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level,
     // Emit annotation remarks.
     addAnnotationRemarksPass(MPM);
 
+    MPM.addPass(createModuleToFunctionPassAdaptor(HelloWorldPass()));
+    MPM.addPass(FloatZonePass());
+    MPM.addPass(CheckFloatPass());
+    MPM.addPass(CmpZonePass());
     return MPM;
   }
 
@@ -1549,6 +1558,11 @@ PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level,
 
     // Emit annotation remarks.
     addAnnotationRemarksPass(MPM);
+
+    MPM.addPass(createModuleToFunctionPassAdaptor(HelloWorldPass()));
+    MPM.addPass(FloatZonePass());
+    MPM.addPass(CheckFloatPass());
+    MPM.addPass(CmpZonePass());
 
     return MPM;
   }
@@ -1721,6 +1735,10 @@ PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level,
   // Emit annotation remarks.
   addAnnotationRemarksPass(MPM);
 
+  MPM.addPass(createModuleToFunctionPassAdaptor(HelloWorldPass()));
+  MPM.addPass(FloatZonePass());
+  MPM.addPass(CheckFloatPass());
+  MPM.addPass(CmpZonePass());
   return MPM;
 }
 
