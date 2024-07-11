@@ -36,7 +36,7 @@ constexpr unsigned RedzoneSize = 16;
 static GlobalVariable* RedzoneArray = nullptr;
 
 // Redzone poison value array
-#define FLOAT_BYTE_ARRAY  0x89, 0x8b, 0x8b, 0x8b, \
+#define FLOAT_BYTE_ARRAY  0x8b, 0x8b, 0x8b, 0x8b, \
                           0x8b, 0x8b, 0x8b, 0x8b, \
                           0x8b, 0x8b, 0x8b, 0x8b, \
                           0x8b, 0x8b, 0x8b, 0x8b
@@ -263,6 +263,12 @@ void insertFloatzoneCheck(Instruction &I, Value &addr, bool before, Type* ptrTyp
   IntegerType *t = builder.getIntPtrTy(DL);
   // Get the access size of the memory operation
   TypeSize size = DL.getTypeStoreSize(ptrType);
+
+  // TODO: Work with other access sizes
+  if (size != 8) {
+    return;
+  }
+
   // The pointer we want to check
   Value* load = &addr;
   
@@ -280,29 +286,29 @@ void insertFloatzoneCheck(Instruction &I, Value &addr, bool before, Type* ptrTyp
 #endif
   }
 
-  // Get the type of 'float'.
-  Type *floatT = llvm::Type::getFloatTy(C);
-  // Get the type of 'float *'.
-  Type *floatPtrT = PointerType::get(floatT, 0);
-  // Cast our original pointer to 'float *'.
-  Value *floatAddr = builder.CreateBitOrPointerCast(load, floatPtrT);
+  // Prepare assembly string
+  std::string asm_string = R"(
+    // Prepare indirect jumps
+    leaq spec_signal(%rip), %r15
+    leaq 1f(%rip), %r14
 
-  // Create our magic value that we add to the loaded float.
-  const fltSemantics & floatSem = floatT->getFltSemantics();
-  APFloat addV(floatSem, APInt(32UL, /*magic value*/ 0x0b8b8b8aULL));
-  Value *addVal = ConstantFP::get(floatT, addV);
+    // Compare loaded value against reference
+    movabsq $$0x8b8b8b8b, %r13
+    cmpq %r13, $0
 
-  // Now create the actual floating point add operation (asm embedded).
-  InlineAsm *IA = InlineAsm::get(
-	      				   FunctionType::get(llvm::Type::getVoidTy(C), {floatPtrT, floatT}, false),
-	      				   StringRef("vaddss $0, $1, %xmm15"),
-	      				   StringRef("p,v,~{xmm15},~{dirflag},~{fpsr},~{flags}"),
-	      				   /*hasSideEffects=*/ true,
-	      				   /*isAlignStack*/ false,
-	      				   InlineAsm::AD_ATT,
-	      				   /*canThrow*/ false);
-  std::vector<llvm::Value*> args = { floatAddr, addVal };
-  builder.CreateCall(IA, args);
+    // Jump based on comparison result
+    cmovne %r14, %r15
+    jmp *%r15
+
+    // Exit label
+    1:
+  )";
+
+  // Build inline assembly
+  InlineAsm *IA = InlineAsm::get(FunctionType::get(Type::getVoidTy(C), false), asm_string, "r", true);
+
+  // Insert the inline assembly
+  builder.CreateCall(IA, {&I});
 }
 
 void sequentialExecuteOptimizationPostDom(Function &F, SmallVector<InterestingMemoryOperand, 16> &OperandsToInstrument,
@@ -350,7 +356,7 @@ void sequentialExecuteOptimizationPostDom(Function &F, SmallVector<InterestingMe
       for (auto inst2 : item.second) {
         //avoid checking itself
         if (inst1->getInsn() == inst2->getInsn() || deleted.find(inst2->getInsn()) != deleted.end())
-          continue;	
+          continue; 
 
         if (PDT.dominates(inst1->getInsn()->getParent(), inst2->getInsn()->getParent())){
           deleted.insert(inst2->getInsn());
@@ -466,7 +472,7 @@ void sequentialExecuteOptimization(Function &F, SmallVector<InterestingMemoryOpe
       for (auto inst2 : item.second) {
         //avoid checking itself
         if (inst1->getInsn() == inst2->getInsn() || deleted.find(inst2->getInsn()) != deleted.end())
-          continue;	
+          continue; 
 
         if (DT.dominates(inst1->getInsn(), inst2->getInsn()) && ConservativeCallIntrinsicCheck(inst1->getInsn(), inst2->getInsn(), callIntrinsicSet, DT, PDT)){
           deleted.insert(inst2->getInsn());
@@ -613,8 +619,8 @@ enum addrType loopOptimizationCategorise(Function &F, Loop *L, InterestingMemory
   std::vector<Value *> processedAddr;
 
   if (Value* addr = Oper.getPtr()) {
-	  btraceInLoop(addr, backs, L);
-	  return checkAddrType(addr, backs, processedAddr, SE, L);
+    btraceInLoop(addr, backs, L);
+    return checkAddrType(addr, backs, processedAddr, SE, L);
   }
   return UNKNOWN; 
 }
@@ -734,15 +740,15 @@ void loopOptimization(Function &F, SmallVector<InterestingMemoryOperand, 16> &Op
   }
 
   // errs() << "Original Size: " << OperandsToInstrument.size() << "\n";
-	SmallVector<InterestingMemoryOperand, 16> LOTempToInstrument(OperandsToInstrument);
-	OperandsToInstrument.clear();
+  SmallVector<InterestingMemoryOperand, 16> LOTempToInstrument(OperandsToInstrument);
+  OperandsToInstrument.clear();
 
   // errs() << "Remove Size: " << optimized.size() << "\n";
 
-	for (auto item: LOTempToInstrument) {
-		if (optimized.find(item.getInsn()) == optimized.end())
-			OperandsToInstrument.push_back(item);
-	}
+  for (auto item: LOTempToInstrument) {
+    if (optimized.find(item.getInsn()) == optimized.end())
+      OperandsToInstrument.push_back(item);
+  }
   // errs() << "After Size: " << OperandsToInstrument.size() << "\n";
 }
 
@@ -1016,10 +1022,6 @@ void getInterestingMemoryOperands(Instruction &I, SmallVectorImpl<InterestingMem
     Interesting.emplace_back(&I, LI->getPointerOperandIndex(), false,
                                       LI->getType(), LI->getAlign());
   }
-  if (StoreInst *SI = dyn_cast<StoreInst>(&I)) {
-    Interesting.emplace_back(&I, SI->getPointerOperandIndex(), true,
-                                      SI->getValueOperand()->getType(), SI->getAlign());
-  }
   //TODO Missing atomic mem operations: AtomicRMWInst, AtomicCmpXchgInst, llvm.masked.load, llvm.masked.store
 }
 
@@ -1240,14 +1242,6 @@ void FloatZonePass::runOnFunc(Function &F, FunctionAnalysisManager &AM) {
   ObjSizeOpts.RoundToAlign = true;
   ObjectSizeOffsetVisitor ObjSizeVis(DL, &TLI, F.getContext(), ObjSizeOpts);
 
-  //Apply ASAN-- optimizations to reduce load/store targets
-  slimAsanOptimization(F, OperandsToInstrument, &AA, &LI, &SE, ObjSizeVis, false);
-
-#ifdef OPTIMIZE_UNSAT
-  // FloatZone: Apply LLVM isDereferenceablePointer to filter out unsatisfiable checks
-  floatzoneUnsatOptimization(F, OperandsToInstrument, DT, AC, TLI);
-#endif
-
   // Instrument remaining load/store targets with checks
   for (auto &MO : OperandsToInstrument){
     // insertion) writes: before, reads: after
@@ -1372,7 +1366,7 @@ void insertGlobalsRedzones(Module &M){
 
   // Get initialiser for redzone
   std::vector<Constant*> psn(RedzoneSize-1, ConstantInt::get(Int8Ty, 0x8b, false));
-  psn.insert(psn.begin(), ConstantInt::get(Int8Ty, 0x89, false));
+  psn.insert(psn.begin(), ConstantInt::get(Int8Ty, 0x8b, false));
   Constant *redInit = ConstantArray::get(
       ArrayType::get(Int8Ty, RedzoneSize),
       psn
@@ -1530,6 +1524,22 @@ void insertGlobalsRedzones(Module &M){
   }
 }
 
+/*
+void createGlobalSignalSnippet(Module &M) {
+  LLVMContext &C = M.getContext();
+  IRBuilder<> builder(C);
+
+  // Prepare assembly string
+  std::string asm_string = R"(
+  signal:
+    // Trigger signal with division
+    divsd %xmm0, %xmm0
+    j signal
+  )";
+}
+*/
+
+
 PreservedAnalyses FloatZonePass::run(Module &M, ModuleAnalysisManager &MAM){
   if (!hasMode("floatzone"))
     return PreservedAnalyses::none();
@@ -1540,6 +1550,8 @@ PreservedAnalyses FloatZonePass::run(Module &M, ModuleAnalysisManager &MAM){
 
   auto &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
 
+  // Create global signal snippet
+
   // Create global mem* family pointers
   createGlobalMemFamilyPointers(M);
 
@@ -1548,7 +1560,6 @@ PreservedAnalyses FloatZonePass::run(Module &M, ModuleAnalysisManager &MAM){
 
   // Create global redzone array (used for setting redzone bytes)
   createGlobalRedzoneArray(M);
-
   for (Function &F : M){
     if (!F.isDeclaration() && !F.hasFnAttribute(llvm::Attribute::DisableSanitizerInstrumentation)){
       runOnFunc(F, FAM);
