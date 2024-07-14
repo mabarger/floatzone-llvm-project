@@ -288,12 +288,17 @@ void insertFloatzoneCheck(Instruction &I, Value &addr, bool before, Type* ptrTyp
 
   // Prepare assembly string
   std::string asm_string = R"(
+    // Save used registers
+    push %r13
+    push %r14
+    push %r15
+
     // Prepare indirect jumps
     leaq spec_signal(%rip), %r15
     leaq 1f(%rip), %r14
 
     // Compare loaded value against reference
-    movabsq $$0x8b8b8b8b, %r13
+    movabsq $$0x8b8b8b8b8b8b8b8b, %r13
     cmpq %r13, $0
 
     // Jump based on comparison result
@@ -302,6 +307,11 @@ void insertFloatzoneCheck(Instruction &I, Value &addr, bool before, Type* ptrTyp
 
     // Exit label
     1:
+
+    // Restore used registers
+    pop %r15
+    pop %r14
+    pop %r13
   )";
 
   // Build inline assembly
@@ -1231,7 +1241,6 @@ void FloatZonePass::runOnFunc(Function &F, FunctionAnalysisManager &AM) {
   #endif
 
   //Collect all the analysis we can
-  AAResults &AA = AM.getResult<AAManager>(F);
   TargetLibraryInfo &TLI = AM.getResult<TargetLibraryAnalysis>(F);
   DominatorTree DT(F);
   AssumptionCache AC(F);
@@ -1539,6 +1548,37 @@ void createGlobalSignalSnippet(Module &M) {
 }
 */
 
+void insertGlobalAsm(Module &M) {
+  LLVMContext &C = M.getContext();
+
+  // Prepare assembly string
+  std::string asm_string = R"(
+  .globl spec_signal
+  spec_signal:
+    // Trigger signal with division
+    divsd %xmm0, %xmm0
+    j spec_signal
+  )";
+
+  // Insert the assembly snippet
+  IRBuilder<> Builder(C);
+  InlineAsm *IA = InlineAsm::get(FunctionType::get(Type::getVoidTy(C), false), asm_string, "r", true);
+
+  // Get main
+  Function* main_func = M.getFunction("main");
+
+  // Get the first basic block in the 'main' function
+  BasicBlock* mainEntryBlock = &main_func->getEntryBlock();
+
+  // Create a new basic block before the first block in 'main'
+  BasicBlock* newBlock = BasicBlock::Create(C, "spec_signal_block", main_func, mainEntryBlock);
+
+  // Get the first instruction in the new basic block
+  Instruction* IP = newBlock->getFirstNonPHIOrDbgOrLifetime();
+
+  Builder.CreateCall(IA, {IP});
+}
+
 
 PreservedAnalyses FloatZonePass::run(Module &M, ModuleAnalysisManager &MAM){
   if (!hasMode("floatzone"))
@@ -1551,6 +1591,7 @@ PreservedAnalyses FloatZonePass::run(Module &M, ModuleAnalysisManager &MAM){
   auto &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
 
   // Create global signal snippet
+  //insertGlobalAsm(M);
 
   // Create global mem* family pointers
   createGlobalMemFamilyPointers(M);

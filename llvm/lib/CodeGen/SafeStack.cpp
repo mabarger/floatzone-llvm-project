@@ -934,21 +934,11 @@ public:
 llvm::DenseSet<AllocaInst *> getUnsafeAlloca(Function &F, ScalarEvolution &SE) {
   llvm::DenseSet<AllocaInst *> result;
 
-  TargetLoweringBase *target = nullptr;
-  SafeStack stack(F, *target, F.getParent()->getDataLayout(), nullptr, SE);
-
-  SmallVector<AllocaInst *, 16> StaticAllocas;
-  SmallVector<AllocaInst *, 4> DynamicAllocas;
-  SmallVector<Argument *, 4> ByValArguments;
-  SmallVector<Instruction *, 4> Returns;
-  SmallVector<Instruction *, 4> StackRestorePoints;
-  stack.findInsts(F, StaticAllocas, DynamicAllocas, ByValArguments, Returns,
-            StackRestorePoints);
-
-  for (AllocaInst *I : StaticAllocas)
-    result.insert(I);
-  for (AllocaInst *I : DynamicAllocas)
-    result.insert(I);
+  for(Instruction &I : instructions(&F)) {
+    if (auto *AI = dyn_cast<AllocaInst>(&I)) {
+      result.insert(AI);
+    }
+  }
 
   return result;
 }
